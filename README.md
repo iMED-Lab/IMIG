@@ -1,4 +1,4 @@
-# IMIG: Interpretable Multi-modal Incomplete Learning for Retinal Disease Diagnosis
+# Angiography-free Diagnosis of Retinal Diseases via Interpretable Multi-modal Learning
 
 This repository contains the official implementation of **"Angiography-free Diagnosis of Retinal Diseases via Interpretable Multi-modal Learning"**.
 
