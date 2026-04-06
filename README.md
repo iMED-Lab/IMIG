@@ -35,28 +35,6 @@ We propose an interpretable incomplete multi-modal learning framework that enabl
     └── save.py                  # Conditional model checkpointing
 ```
 
-
-## Training Strategy
-
-Training follows a **three-stage curriculum** (Section "Training strategy" in the paper):
-
-| Stage | Epochs | What is Trained | Loss |
-|---|---|---|---|
-| **Stage 1**: FFA pre-training | N | FFA backbone, FFA prototypes, FFA classifier | $\mathcal{L}_{BCE}^{FFA}$ |
-| **Stage 2**: CFP pre-training | N | CFP backbone, CFP prototypes, projection heads, joint classifier (FFA frozen) | $\mathcal{L}_{BCE}^{CFP} + \mathcal{L}_{BCE}^{fused} + \mathcal{L}_P + \mathcal{L}_{dist}$ |
-| **Stage 3**: Joint fine-tuning | N | All modules | $\mathcal{L}_{BCE}^{CFP} + \mathcal{L}_{BCE}^{FFA} + 5\mathcal{L}_{BCE}^{fused} + \mathcal{L}_{dist} + 0.1\mathcal{L}_P$ |
-
-
-### Loss Functions
-
-| Loss | Equation | Description |
-|---|---|---|
-| $\mathcal{L}_{BCE}$ | Eq. 5 | Binary cross-entropy for multi-label classification |
-| $\mathcal{L}_T$ | Eq. 2 | Typicality loss — pulls features toward their class prototypes |
-| $\mathcal{L}_O$ | Eq. 3 | Orthogonality loss — encourages diversity within each class's prototypes |
-| $\mathcal{L}_P$ | Eq. 4 | Typical features alignment loss — InfoNCE-style contrastive loss for cross-modal correspondence |
-| $\mathcal{L}_{dist}$ | — | L1 distance between completed and direct FFA activations |
-
 ## Requirements
 
 - Python 3.8+
