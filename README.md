@@ -42,7 +42,7 @@ We propose an interpretable incomplete multi-modal learning framework that enabl
 - torchvision
 - scikit-learn
 - pandas, openpyxl
-- opencv-python (cv2)
+- opencv-python
 - matplotlib
 - numpy
 
