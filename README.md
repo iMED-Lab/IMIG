@@ -43,9 +43,9 @@ Training follows a **three-stage curriculum** (Section "Training strategy" in th
 
 | Stage | Epochs | What is Trained | Loss |
 |---|---|---|---|
-| **Stage 1**: FFA pre-training | 15 | FFA backbone, FFA prototypes, FFA classifier | $\mathcal{L}_{BCE}^{FFA}$ |
-| **Stage 2**: CFP pre-training | 15 | CFP backbone, CFP prototypes, projection heads, joint classifier (FFA frozen) | $\mathcal{L}_{BCE}^{CFP} + \mathcal{L}_{BCE}^{fused} + \mathcal{L}_P + \mathcal{L}_{dist}$ |
-| **Stage 3**: Joint fine-tuning | 55 | All modules | $\mathcal{L}_{BCE}^{CFP} + \mathcal{L}_{BCE}^{FFA} + 5\mathcal{L}_{BCE}^{fused} + \mathcal{L}_{dist} + 0.1\mathcal{L}_P$ |
+| **Stage 1**: FFA pre-training | N | FFA backbone, FFA prototypes, FFA classifier | $\mathcal{L}_{BCE}^{FFA}$ |
+| **Stage 2**: CFP pre-training | N | CFP backbone, CFP prototypes, projection heads, joint classifier (FFA frozen) | $\mathcal{L}_{BCE}^{CFP} + \mathcal{L}_{BCE}^{fused} + \mathcal{L}_P + \mathcal{L}_{dist}$ |
+| **Stage 3**: Joint fine-tuning | N | All modules | $\mathcal{L}_{BCE}^{CFP} + \mathcal{L}_{BCE}^{FFA} + 5\mathcal{L}_{BCE}^{fused} + \mathcal{L}_{dist} + 0.1\mathcal{L}_P$ |
 
 
 ### Loss Functions
@@ -165,7 +165,7 @@ Additional hyperparameters (learning rates, training schedule, loss coefficients
 If you find this work useful, please cite:
 
 ```bibtex
-@article{hao2025imig,
+@article{hao2026angiography,
   title={Angiography-free Diagnosis of Retinal Diseases via Interpretable Multi-modal Learning},
   author={Hao, Jinkui and others},
   journal={NPJ digital medicine},
