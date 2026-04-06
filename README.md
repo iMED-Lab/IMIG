@@ -1,4 +1,4 @@
-# IMIG: Interpretable Multi-modal Incomplete Learning for Retinal Disease Diagnosis
+# PPNet: Interpretable Multi-modal Incomplete Learning for Retinal Disease Diagnosis
 
 This repository contains the official implementation of **"Angiography-free Diagnosis of Retinal Diseases via Interpretable Multi-modal Learning"**.
 
@@ -24,7 +24,7 @@ We propose an interpretable incomplete multi-modal learning framework that enabl
 ├── run.sh                       # Example launch script (DDP, 2 GPUs)
 │
 ├── models/
-│   ├── model.py                 # IMIG (single branch) and MultiModel (dual branch)
+│   ├── model.py                 # PPNet (single branch) and MultiModel (dual branch)
 │   └── convnext_features.py     # ConvNeXt-Base backbone feature extractor
 │
 └── utils/
@@ -165,7 +165,7 @@ Additional hyperparameters (learning rates, training schedule, loss coefficients
 If you find this work useful, please cite:
 
 ```bibtex
-@article{hao2025imig,
+@article{hao2025PPNet,
   title={Angiography-free Diagnosis of Retinal Diseases via Interpretable Multi-modal Learning},
   author={Hao, Jinkui and others},
   journal={NPJ digital medicine},

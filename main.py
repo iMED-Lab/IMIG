@@ -92,7 +92,7 @@ def plot_roc_curve(test_labels, test_predictions, disease_labels, title='ROC Cur
     return roc_auc_macro["avg"]
 
 
-def build_optimizer_multi(IMIG, lr_config, mode='joint'):
+def build_optimizer_multi(PPNet, lr_config, mode='joint'):
     """Build optimizer with per-module learning rates for the multi-modal model.
     
     Args:
@@ -101,53 +101,53 @@ def build_optimizer_multi(IMIG, lr_config, mode='joint'):
     """
     if mode == 'warm':
         specs = [
-            {'params': IMIG.module.CFP_branch.add_on_layers.parameters(),
+            {'params': PPNet.module.CFP_branch.add_on_layers.parameters(),
              'lr': lr_config['add_on_layers'], 'weight_decay': 1e-3},
-            {'params': IMIG.module.CFP_branch.prototype_vectors,
+            {'params': PPNet.module.CFP_branch.prototype_vectors,
              'lr': lr_config['prototype_vectors']},
-            {'params': IMIG.module.FFA_branch.add_on_layers.parameters(),
+            {'params': PPNet.module.FFA_branch.add_on_layers.parameters(),
              'lr': lr_config['add_on_layers'], 'weight_decay': 1e-3},
-            {'params': IMIG.module.FFA_branch.prototype_vectors,
+            {'params': PPNet.module.FFA_branch.prototype_vectors,
              'lr': lr_config['prototype_vectors']},
         ]
     elif mode == 'joint':
         specs = [
-            {'params': IMIG.module.CFP_branch.features.parameters(),
+            {'params': PPNet.module.CFP_branch.features.parameters(),
              'lr': lr_config['features'], 'weight_decay': 1e-3},
-            {'params': IMIG.module.CFP_branch.add_on_layers.parameters(),
+            {'params': PPNet.module.CFP_branch.add_on_layers.parameters(),
              'lr': lr_config['add_on_layers'], 'weight_decay': 1e-3},
-            {'params': IMIG.module.CFP_branch.prototype_vectors,
+            {'params': PPNet.module.CFP_branch.prototype_vectors,
              'lr': lr_config['prototype_vectors']},
-            {'params': IMIG.module.CFP_branch.conv_offset.parameters(),
+            {'params': PPNet.module.CFP_branch.conv_offset.parameters(),
              'lr': lr_config['conv_offset']},
-            {'params': IMIG.module.CFP_branch.last_layer.parameters(),
+            {'params': PPNet.module.CFP_branch.last_layer.parameters(),
              'lr': lr_config['joint_last_layer_lr']},
-            {'params': IMIG.module.FFA_branch.features.parameters(),
+            {'params': PPNet.module.FFA_branch.features.parameters(),
              'lr': lr_config['features'], 'weight_decay': 1e-3},
-            {'params': IMIG.module.FFA_branch.add_on_layers.parameters(),
+            {'params': PPNet.module.FFA_branch.add_on_layers.parameters(),
              'lr': lr_config['add_on_layers'], 'weight_decay': 1e-3},
-            {'params': IMIG.module.FFA_branch.prototype_vectors,
+            {'params': PPNet.module.FFA_branch.prototype_vectors,
              'lr': lr_config['prototype_vectors']},
-            {'params': IMIG.module.FFA_branch.conv_offset.parameters(),
+            {'params': PPNet.module.FFA_branch.conv_offset.parameters(),
              'lr': lr_config['conv_offset']},
-            {'params': IMIG.module.FFA_branch.last_layer.parameters(),
+            {'params': PPNet.module.FFA_branch.last_layer.parameters(),
              'lr': lr_config['joint_last_layer_lr']},
-            {'params': IMIG.module.last_layer_multi.parameters(),
+            {'params': PPNet.module.last_layer_multi.parameters(),
              'lr': lr_config['joint_last_layer_lr']},
-            {'params': IMIG.module.projection_CFP.parameters(),
+            {'params': PPNet.module.projection_CFP.parameters(),
              'lr': lr_config['features']},
-            {'params': IMIG.module.projection_FFA.parameters(),
+            {'params': PPNet.module.projection_FFA.parameters(),
              'lr': lr_config['features']},
-            {'params': IMIG.module.gate_CFP.parameters(),
+            {'params': PPNet.module.gate_CFP.parameters(),
              'lr': lr_config['features']},
-            {'params': IMIG.module.gate_FFA.parameters(),
+            {'params': PPNet.module.gate_FFA.parameters(),
              'lr': lr_config['features']},
         ]
     elif mode == 'last_layer':
         specs = [
-            {'params': IMIG.module.CFP_branch.last_layer.parameters(),
+            {'params': PPNet.module.CFP_branch.last_layer.parameters(),
              'lr': last_layer_optimizer_lr},
-            {'params': IMIG.module.FFA_branch.last_layer.parameters(),
+            {'params': PPNet.module.FFA_branch.last_layer.parameters(),
              'lr': last_layer_optimizer_lr},
         ]
     else:
@@ -156,10 +156,10 @@ def build_optimizer_multi(IMIG, lr_config, mode='joint'):
     return torch.optim.Adam(specs)
 
 
-def save_roc_curves(IMIG, test_loader, disease_labels, model_dir, epoch, log):
+def save_roc_curves(PPNet, test_loader, disease_labels, model_dir, epoch, log):
     """Evaluate and save ROC curves for CFP, FFA, and averaged predictions."""
     accu, result_pro = tnt.test(
-        model=IMIG, dataloader=test_loader,
+        model=PPNet, dataloader=test_loader,
         class_specific=True, log=log,
         subtractive_margin=subtractive_margin, img_marker=img_marker)
 
@@ -179,25 +179,25 @@ def save_roc_curves(IMIG, test_loader, disease_labels, model_dir, epoch, log):
     return accu, result_pro
 
 
-def run_push_finetune(IMIG, train_loader, test_loader, last_layer_optimizer,
+def run_push_finetune(PPNet, train_loader, test_loader, last_layer_optimizer,
                       class_specific, model_dir, epoch, log, pretrain_stage):
     """Fine-tune last layer after prototype pushing."""
     if not last_layer_fixed_flag:
-        tnt.last_only(model=IMIG, log=log, last_layer_fixed=last_layer_fixed_flag,
+        tnt.last_only(model=PPNet, log=log, last_layer_fixed=last_layer_fixed_flag,
                       img_marker=img_marker, pretrain=pretrain_stage)
         suffix = 'FFApush' if pretrain_stage == 'FFA' else 'push'
         for i in range(10 if pretrain_stage else 20):
             log('iteration: \t{0}'.format(i))
-            _ = tnt.train(model=IMIG, dataloader=train_loader,
+            _ = tnt.train(model=PPNet, dataloader=train_loader,
                          optimizer=last_layer_optimizer,
                          class_specific=class_specific, coefs=coefs, log=log,
                          subtractive_margin=subtractive_margin,
                          img_marker=img_marker, pretrianFFA=pretrain_stage)
-            accu, _ = tnt.test(model=IMIG, dataloader=test_loader,
+            accu, _ = tnt.test(model=PPNet, dataloader=test_loader,
                               class_specific=class_specific, log=log,
                               img_marker=img_marker, pretrianFFA=pretrain_stage)
             save.save_model_w_condition(
-                model=IMIG.module, model_dir=model_dir,
+                model=PPNet.module, model_dir=model_dir,
                 model_name=f'{epoch}_{i}{suffix}', accu=accu,
                 target_accu=0.70, log=log)
 
@@ -299,7 +299,7 @@ log('batch size: {0}'.format(config.batchSize))
 # Model construction
 # ============================================================================
 
-IMIG = model.construct_MultiModel(
+PPNet = model.construct_MultiModel(
     base_architecture=base_architecture, pretrained=True, img_size=img_size,
     prototype_shape=prototype_shape, num_classes=num_classes,
     topk_k=topk_k, m=m, add_on_layers_type=add_on_layers_type,
@@ -308,9 +308,9 @@ IMIG = model.construct_MultiModel(
     deformable_conv_hidden_channels=deformable_conv_hidden_channels,
     prototype_dilation=2, marker=img_marker)
 
-IMIG = IMIG.cuda()
-IMIG = torch.nn.parallel.DistributedDataParallel(
-    IMIG, find_unused_parameters=True,
+PPNet = PPNet.cuda()
+PPNet = torch.nn.parallel.DistributedDataParallel(
+    PPNet, find_unused_parameters=True,
     device_ids=[device_id], output_device=device_id)
 
 class_specific = True
@@ -323,42 +323,42 @@ log('=' * 60)
 log('Stage 1: Pre-train FFA branch')
 log('=' * 60)
 
-joint_optimizer = optim.Adam(IMIG.parameters(), lr=joint_optimizer_lrs['features'])
+joint_optimizer = optim.Adam(PPNet.parameters(), lr=joint_optimizer_lrs['features'])
 joint_lr_scheduler = torch.optim.lr_scheduler.StepLR(
     joint_optimizer, step_size=joint_lr_step_size, gamma=0.2)
-warm_optimizer = build_optimizer_multi(IMIG, warm_optimizer_lrs, mode='warm')
-last_layer_optimizer = build_optimizer_multi(IMIG, {}, mode='last_layer')
+warm_optimizer = build_optimizer_multi(PPNet, warm_optimizer_lrs, mode='warm')
+last_layer_optimizer = build_optimizer_multi(PPNet, {}, mode='last_layer')
 
 for epoch in range(15):
     log('epoch: \t{0}'.format(epoch))
 
     if epoch < num_warm_epochs:
-        tnt.warm_only(model=IMIG, log=log, last_layer_fixed=last_layer_fixed_flag,
+        tnt.warm_only(model=PPNet, log=log, last_layer_fixed=last_layer_fixed_flag,
                       img_marker=img_marker, pretrain='FFA')
-        _ = tnt.train(model=IMIG, dataloader=train_loader, optimizer=warm_optimizer,
+        _ = tnt.train(model=PPNet, dataloader=train_loader, optimizer=warm_optimizer,
                      class_specific=class_specific, coefs=coefs, log=log,
                      subtractive_margin=subtractive_margin,
                      use_ortho_loss=False, img_marker=img_marker, pretrianFFA='FFA')
     else:
-        tnt.joint(model=IMIG, log=log, last_layer_fixed=last_layer_fixed_flag,
+        tnt.joint(model=PPNet, log=log, last_layer_fixed=last_layer_fixed_flag,
                   img_marker=img_marker, pretrain='FFA')
-        _ = tnt.train(model=IMIG, dataloader=train_loader, optimizer=joint_optimizer,
+        _ = tnt.train(model=PPNet, dataloader=train_loader, optimizer=joint_optimizer,
                      class_specific=class_specific, coefs=coefs, log=log,
                      subtractive_margin=subtractive_margin,
                      use_ortho_loss=True, img_marker=img_marker, pretrianFFA='FFA')
         joint_lr_scheduler.step()
 
-    accu, _ = tnt.test(model=IMIG, dataloader=test_loader,
+    accu, _ = tnt.test(model=PPNet, dataloader=test_loader,
                        class_specific=class_specific, log=log,
                        subtractive_margin=subtractive_margin,
                        img_marker=img_marker, pretrianFFA='FFA')
     save.save_model_w_condition(
-        model=IMIG.module, model_dir=model_dir,
+        model=PPNet.module, model_dir=model_dir,
         model_name=str(epoch) + 'pretrain_FFA', accu=accu,
         target_accu=0.76, log=log)
 
     if (epoch == push_start and push_start < 20) or (epoch >= push_start and epoch in push_epochs):
-        run_push_finetune(IMIG, train_loader, test_loader, last_layer_optimizer,
+        run_push_finetune(PPNet, train_loader, test_loader, last_layer_optimizer,
                          class_specific, model_dir, epoch, log, 'FFA')
 
 
@@ -370,14 +370,14 @@ log('=' * 60)
 log('Stage 2: Pre-train CFP branch (FFA frozen)')
 log('=' * 60)
 
-joint_optimizer = optim.Adam(IMIG.parameters(), lr=joint_optimizer_lrs['features'])
+joint_optimizer = optim.Adam(PPNet.parameters(), lr=joint_optimizer_lrs['features'])
 joint_lr_scheduler = torch.optim.lr_scheduler.StepLR(
     joint_optimizer, step_size=joint_lr_step_size, gamma=0.2)
-warm_optimizer = build_optimizer_multi(IMIG, warm_optimizer_lrs, mode='warm')
-last_layer_optimizer = build_optimizer_multi(IMIG, {}, mode='last_layer')
+warm_optimizer = build_optimizer_multi(PPNet, warm_optimizer_lrs, mode='warm')
+last_layer_optimizer = build_optimizer_multi(PPNet, {}, mode='last_layer')
 
 log('Pre-testing before CFP training:')
-accu, _ = tnt.test(model=IMIG, dataloader=test_loader,
+accu, _ = tnt.test(model=PPNet, dataloader=test_loader,
                    class_specific=class_specific, log=log,
                    subtractive_margin=subtractive_margin,
                    img_marker=img_marker, pretrianFFA='CFP')
@@ -386,32 +386,32 @@ for epoch in range(15):
     log('epoch: \t{0}'.format(epoch))
 
     if epoch < num_warm_epochs:
-        tnt.warm_only(model=IMIG, log=log, last_layer_fixed=last_layer_fixed_flag,
+        tnt.warm_only(model=PPNet, log=log, last_layer_fixed=last_layer_fixed_flag,
                       img_marker=img_marker, pretrain='CFP')
-        _ = tnt.train(model=IMIG, dataloader=train_loader, optimizer=warm_optimizer,
+        _ = tnt.train(model=PPNet, dataloader=train_loader, optimizer=warm_optimizer,
                      class_specific=class_specific, coefs=coefs, log=log,
                      subtractive_margin=subtractive_margin,
                      use_ortho_loss=False, img_marker=img_marker, pretrianFFA='CFP')
     else:
-        tnt.joint(model=IMIG, log=log, last_layer_fixed=last_layer_fixed_flag,
+        tnt.joint(model=PPNet, log=log, last_layer_fixed=last_layer_fixed_flag,
                   img_marker=img_marker, pretrain='CFP')
-        _ = tnt.train(model=IMIG, dataloader=train_loader, optimizer=joint_optimizer,
+        _ = tnt.train(model=PPNet, dataloader=train_loader, optimizer=joint_optimizer,
                      class_specific=class_specific, coefs=coefs, log=log,
                      subtractive_margin=subtractive_margin,
                      use_ortho_loss=True, img_marker=img_marker, pretrianFFA='CFP')
         joint_lr_scheduler.step()
 
-    accu, _ = tnt.test(model=IMIG, dataloader=test_loader,
+    accu, _ = tnt.test(model=PPNet, dataloader=test_loader,
                        class_specific=class_specific, log=log,
                        subtractive_margin=subtractive_margin,
                        img_marker=img_marker, pretrianFFA='CFP')
     save.save_model_w_condition(
-        model=IMIG.module, model_dir=model_dir,
+        model=PPNet.module, model_dir=model_dir,
         model_name=str(epoch) + 'pretrain_CFP', accu=accu,
         target_accu=0.75, log=log)
 
     if (epoch == push_start and push_start < 20) or (epoch >= push_start and epoch in push_epochs):
-        run_push_finetune(IMIG, train_loader, test_loader, last_layer_optimizer,
+        run_push_finetune(PPNet, train_loader, test_loader, last_layer_optimizer,
                          class_specific, model_dir, epoch, log, 'CFP')
 
 
@@ -423,11 +423,11 @@ log('=' * 60)
 log('Stage 3: Joint fine-tuning')
 log('=' * 60)
 
-joint_optimizer = build_optimizer_multi(IMIG, joint_optimizer_lrs, mode='joint')
+joint_optimizer = build_optimizer_multi(PPNet, joint_optimizer_lrs, mode='joint')
 joint_lr_scheduler = torch.optim.lr_scheduler.StepLR(
     joint_optimizer, step_size=joint_lr_step_size, gamma=0.2)
-warm_optimizer = build_optimizer_multi(IMIG, warm_optimizer_lrs, mode='warm')
-last_layer_optimizer = build_optimizer_multi(IMIG, {}, mode='last_layer')
+warm_optimizer = build_optimizer_multi(PPNet, warm_optimizer_lrs, mode='warm')
+last_layer_optimizer = build_optimizer_multi(PPNet, {}, mode='last_layer')
 
 log("joint_optimizer_lrs: " + str(joint_optimizer_lrs))
 log("warm_optimizer_lrs: " + str(warm_optimizer_lrs))
@@ -436,30 +436,30 @@ for epoch in range(num_train_epochs):
     log('epoch: \t{0}'.format(epoch))
 
     if epoch < num_warm_epochs:
-        tnt.warm_only(model=IMIG, log=log, last_layer_fixed=last_layer_fixed_flag,
+        tnt.warm_only(model=PPNet, log=log, last_layer_fixed=last_layer_fixed_flag,
                       img_marker=img_marker)
-        _, _ = tnt.train(model=IMIG, dataloader=train_loader, optimizer=warm_optimizer,
+        _, _ = tnt.train(model=PPNet, dataloader=train_loader, optimizer=warm_optimizer,
                         class_specific=class_specific, coefs=coefs, log=log,
                         subtractive_margin=subtractive_margin,
                         use_ortho_loss=False, img_marker=img_marker)
     else:
-        tnt.joint(model=IMIG, log=log, last_layer_fixed=last_layer_fixed_flag,
+        tnt.joint(model=PPNet, log=log, last_layer_fixed=last_layer_fixed_flag,
                   img_marker=img_marker)
-        _ = tnt.train(model=IMIG, dataloader=train_loader, optimizer=joint_optimizer,
+        _ = tnt.train(model=PPNet, dataloader=train_loader, optimizer=joint_optimizer,
                      class_specific=class_specific, coefs=coefs, log=log,
                      subtractive_margin=subtractive_margin,
                      use_ortho_loss=True, img_marker=img_marker)
         joint_lr_scheduler.step()
 
     accu, result_pro = save_roc_curves(
-        IMIG, test_loader, disease_labels, model_dir, epoch, log)
+        PPNet, test_loader, disease_labels, model_dir, epoch, log)
     save.save_model_w_condition(
-        model=IMIG.module, model_dir=model_dir,
+        model=PPNet.module, model_dir=model_dir,
         model_name=str(epoch) + 'nopush', accu=accu,
         target_accu=0.76, log=log)
 
     if (epoch == push_start and push_start < 20) or (epoch >= push_start and epoch in push_epochs):
-        run_push_finetune(IMIG, train_loader, test_loader, last_layer_optimizer,
+        run_push_finetune(PPNet, train_loader, test_loader, last_layer_optimizer,
                          class_specific, model_dir, epoch, log, None)
 
 logclose()

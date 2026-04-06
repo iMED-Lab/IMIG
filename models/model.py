@@ -2,14 +2,16 @@
 Multi-modal prototype-based network for incomplete multi-modal retinal disease diagnosis.
 
 Architecture overview (corresponds to paper Section "Framework"):
-  - IMIG: Single-branch prototype network (used as CFP branch or FFA branch).
+  - PPNet: Single-branch prototype network (used as CFP branch or FFA branch).
            Extracts features via a ConvNeXt backbone, computes cosine similarity
            between spatial features and a learnable typical feature library (prototypes),
            and classifies based on feature-library activation patterns.
-  - MultiModel: Dual-branch model combining CFP_branch and FFA_branch (both IMIG).
+  - MultiModel: Dual-branch model combining CFP_branch and FFA_branch (both PPNet).
            Adds shared-feature projection heads (P_c, P_f) for cross-modal alignment,
            gating modules for feature fusion, and a joint classifier.
            During inference, FFA features are completed via CFP->FFA library indexing.
+
+           The code is partially adapted from the original implementation of https://github.com/Henrymachiyu/This-looks-like-those_ProtoConcepts
 """
 
 import torch
@@ -20,7 +22,7 @@ from models.convnext_features import convnext_base_featuresCFP, convnext_base_fe
 from utils.receptive_field import compute_proto_layer_rf_info_v2
 
 
-class IMIG(nn.Module):
+class PPNet(nn.Module):
     """Single-branch Prototypical Part Network.
     
     Each branch maintains:
@@ -38,7 +40,7 @@ class IMIG(nn.Module):
                  deformable_conv_hidden_channels=0, prototype_dilation=2,
                  img_marker='CFP'):
 
-        super(IMIG, self).__init__()
+        super(PPNet, self).__init__()
         self.img_size = img_size
         self.prototype_shape = prototype_shape
         self.num_prototypes = prototype_shape[0]
@@ -342,7 +344,7 @@ class IMIG(nn.Module):
 
     def __repr__(self):
         return (
-            'IMIG(\n'
+            'PPNet(\n'
             '\tfeatures: {},\n'
             '\timg_size: {},\n'
             '\tprototype_shape: {},\n'
@@ -358,8 +360,8 @@ class MultiModel(nn.Module):
     """Dual-branch multi-modal model for incomplete multi-modal learning.
     
     Architecture (paper Figure 1):
-      - CFP_branch (IMIG): processes color fundus photographs
-      - FFA_branch (IMIG): processes fluorescein fundus angiography images
+      - CFP_branch (PPNet): processes color fundus photographs
+      - FFA_branch (PPNet): processes fluorescein fundus angiography images
       - projection_CFP / projection_FFA: shared feature projection heads (P_c, P_f)
         that map prototype vectors into a common 128-dim latent space for cross-modal
         alignment (trained with L_P, Eq. 4)
@@ -381,7 +383,7 @@ class MultiModel(nn.Module):
         super(MultiModel, self).__init__()
 
         # Dual branches with independent backbones and prototype libraries
-        self.CFP_branch = IMIG(
+        self.CFP_branch = PPNet(
             features=feature1, img_size=img_size,
             prototype_shape=prototype_shape, proto_layer_rf_info=proto_layer_rf_info,
             num_classes=num_classes, topk_k=topk_k, m=m, init_weights=True,
@@ -390,7 +392,7 @@ class MultiModel(nn.Module):
             deformable_conv_hidden_channels=deformable_conv_hidden_channels,
             prototype_dilation=prototype_dilation, img_marker='CFP')
 
-        self.FFA_branch = IMIG(
+        self.FFA_branch = PPNet(
             features=feature2, img_size=img_size,
             prototype_shape=prototype_shape, proto_layer_rf_info=proto_layer_rf_info,
             num_classes=num_classes, topk_k=topk_k, m=m, init_weights=True,
