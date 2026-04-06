@@ -164,7 +164,7 @@ Additional hyperparameters (learning rates, training schedule, loss coefficients
 If you find this work useful, please cite:
 
 ```bibtex
-
+@article{hao2026angiography,
   title={Angiography-free Diagnosis of Retinal Diseases via Interpretable Multi-modal Learning},
   author={Hao, Jinkui and others},
   journal={NPJ digital medicine},
