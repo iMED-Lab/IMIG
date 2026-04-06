@@ -119,7 +119,7 @@ python -m torch.distributed.launch \
 | Argument | Default | Description |
 |---|---|---|
 | `-gpuid` | `'0'` | GPU device IDs |
-| `-num_prototypes` | `2000` | Total number of typical features (divided evenly across classes) |
+| `-num_prototypes` | `70` | Total number of typical features (divided evenly across classes) |
 | `-m` | `1` | Subtractive margin value |
 | `-last_layer_fixed` | `True` | Whether to fix classifier weights during warm-up |
 | `-topk_k` | `1` | Top-k activations per typical feature during training |
