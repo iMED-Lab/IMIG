@@ -111,7 +111,6 @@ python -m torch.distributed.launch \
     -using_deform=False \
     -topk_k=1 \
     -incorrect_class_connection=-0.5 \
-    -deformable_conv_hidden_channels=128 \
     -rand_seed=1
 ```
 
