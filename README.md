@@ -74,12 +74,6 @@ dataset/large/
 │           └── test.xlsx
 ```
 
-The Excel label files should contain the following columns:
-- `name`: patient identifier
-- `Exam_Date`: examination date
-- `OSOD`: eye laterality (OS/OD)
-- `label`: comma-separated disease labels (e.g., `"DR,ME"`)
-- `key`: unique sample identifier
 
 ### External Datasets
 
@@ -110,7 +104,7 @@ python -m torch.distributed.launch \
     --master_port=21676 \
     --use_env main.py \
     -gpuid='0,1' \
-    -num_prototypes=105 \
+    -num_prototypes=70 \
     -m=0.1 \
     -last_layer_fixed=False \
     -subtractive_margin=False \
