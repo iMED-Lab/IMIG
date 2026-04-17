@@ -110,15 +110,13 @@ def _train_or_test_multi(model, dataloader, optimizer=None, class_specific=True,
 
         grad_req = torch.enable_grad() if is_train else torch.no_grad()
         with grad_req:
-            # Forward pass through dual-branch model
-            if pretrain is None:
-                outputs, additional_returns = model(
-                    input_CFP, input_FFA, is_train=is_train,
-                    prototypes_of_wrong_class=None, incpmplete=True)
-            else:
-                outputs, additional_returns = model(
-                    input_CFP, input_FFA, is_train=is_train,
-                    prototypes_of_wrong_class=None)
+            # During training: both CFP and FFA are fed (incomplete=False)
+            # During joint-stage evaluation (pretrain is None): FFA is still
+            # available in the test set for metric computation, but the model's
+            # fused logits are produced via cross-modal completion
+            outputs, additional_returns = model(
+                input_CFP, input_FFA, is_train=is_train,
+                prototypes_of_wrong_class=None, incomplete=False)
 
             output_CFP = outputs[0]
             output_FFA = outputs[1]
@@ -244,7 +242,7 @@ def train(model, dataloader, optimizer, class_specific=False, coefs=None,
 
 def test(model, dataloader, class_specific=False, log=print,
          subtractive_margin=True, img_marker='CFP', pretrianFFA=None):
-    """Evaluate on a dataset."""
+    """Evaluate on a dataset (both CFP and FFA available for metric computation)."""
     log('\ttest')
     model.eval()
     return _train_or_test_multi(
@@ -252,6 +250,66 @@ def test(model, dataloader, class_specific=False, log=print,
         class_specific=class_specific, log=log,
         subtractive_margin=subtractive_margin,
         img_marker=img_marker, pretrain=pretrianFFA)
+
+
+def test_incomplete(model, dataloader, log=print):
+    """Angiography-free inference: evaluate using ONLY CFP images.
+    
+    FFA images are unavailable, and the model completes missing FFA features
+    via cross-modal prototype indexing using only the CFP input.
+    
+    The dataloader may still provide FFA images (for label access), but they
+    are NOT fed to the model — only CFP is used.
+    
+    Args:
+        model: DDP-wrapped MultiModel
+        dataloader: test dataloader (paired data, but FFA is ignored)
+        log: logging function
+    
+    Returns:
+        f1_fused: F1 score of the fused (CFP + completed FFA) predictions
+        results: [true_labels, pred_probs_cfp, pred_probs_completed_ffa, pred_probs_fused]
+    """
+    log('\ttest_incomplete (CFP-only inference)')
+    model.eval()
+
+    true_labels_all = []
+    pred_probs_cfp = []
+    pred_probs_ffa_completed = []
+    pred_probs_fused = []
+
+    with torch.no_grad():
+        for i, (items, label, _, _, label_sparse) in enumerate(dataloader):
+            inputs_FA, inputs_CFP = items
+            input_CFP = inputs_CFP[0].cuda()
+
+            # Forward with incomplete=True: only CFP is used, FFA branch is NOT run
+            outputs, _ = model(input_CFP, x2=None, is_train=False, incomplete=True)
+
+            output_CFP = outputs[0]
+            output_FFA_completed = outputs[1]  # From cross-modal completion, not real FFA
+            output_fused = outputs[2]
+
+            true_labels_all.extend(label.cpu().numpy())
+            pred_probs_cfp.extend(torch.sigmoid(output_CFP).cpu().numpy())
+            pred_probs_ffa_completed.extend(torch.sigmoid(output_FFA_completed).cpu().numpy())
+            pred_probs_fused.extend(torch.sigmoid(output_fused).cpu().numpy())
+
+    # Compute metrics
+    auc_fused, pre, recall, f1_fused, hl = compute_metrics(true_labels_all, pred_probs_fused)
+    auc_cfp, _, _, f1_cfp, _ = compute_metrics(true_labels_all, pred_probs_cfp)
+    auc_completed, _, _, f1_completed, _ = compute_metrics(true_labels_all, pred_probs_ffa_completed)
+
+    log('\t[Incomplete inference - CFP only]')
+    log('\tF1 (fused):     \t{0}'.format(f1_fused))
+    log('\tF1 (CFP):       \t{0}'.format(f1_cfp))
+    log('\tF1 (completed): \t{0}'.format(f1_completed))
+    log('\tAUC (fused):    \t{0}'.format(auc_fused))
+    log('\tAUC (CFP):      \t{0}'.format(auc_cfp))
+    log('\tAUC (completed):\t{0}'.format(auc_completed))
+    log('\tHamming loss:   \t{0}'.format(hl))
+
+    return f1_fused, [true_labels_all, pred_probs_cfp, pred_probs_ffa_completed, pred_probs_fused]
 
 
 # ---- Parameter freezing schedules (Section "Training strategy") ----
