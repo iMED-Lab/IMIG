@@ -10,8 +10,8 @@ Architecture overview (corresponds to paper Section "Framework"):
            Adds shared-feature projection heads (P_c, P_f) for cross-modal alignment,
            gating modules for feature fusion, and a joint classifier.
            During inference, FFA features are completed via CFP->FFA library indexing.
+    The code is partially adapted from the original implementation of https://github.com/Henrymachiyu/This-looks-like-those_ProtoConcepts
 
-           The code is partially adapted from the original implementation of https://github.com/Henrymachiyu/This-looks-like-those_ProtoConcepts
 """
 
 import torch
@@ -371,6 +371,7 @@ class MultiModel(nn.Module):
     During inference (FFA unavailable):
       CFP features are projected into the shared space and matched against the
       FFA prototype library to reconstruct the missing FFA activation pattern.
+
     """
 
     def __init__(self, feature1, feature2, img_size, prototype_shape,
@@ -431,23 +432,68 @@ class MultiModel(nn.Module):
 
         self._initialize_weights()
 
-    def forward(self, x1, x2, is_train=True, prototypes_of_wrong_class=None, incpmplete=False):
-        """
+    def _compute_cross_modal_completion(self, conv_features_CFP, projected_FFA):
+        """Complete missing FFA activations using CFP features and the FFA prototype library.
+        
+        This is the core mechanism described in the paper (Section "Framework"):
+        CFP dense features are projected into the shared latent space and matched
+        against FFA prototype vectors via cosine similarity, producing "virtual"
+        FFA activation patterns without requiring actual FFA images.
+        
         Args:
-            x1: CFP input image tensor
-            x2: FFA input (list of frame tensors)
+            conv_features_CFP: spatial feature maps from CFP backbone, (B, D, H, W)
+            projected_FFA: projected FFA prototypes, (num_class, per_num, 128)
+            
+        Returns:
+            mean_activations_common: completed FFA prototype activations, (B, num_prototypes)
+            activation_common_before: spatial activation maps before pooling
+        """
+        b, dim, h, w = self.CFP_branch.prototype_vectors.shape
+        proto_ffa_projected = projected_FFA.contiguous().view(b, h, w, 128).transpose(1, 3)
+
+        # Project CFP dense features into the shared 128-dim space
+        f_b, f_d, f_h, f_w = conv_features_CFP.shape
+        featureCFP = conv_features_CFP.transpose(1, 3).contiguous().reshape(f_b * f_w * f_h, f_d)
+        featureCFP_projected = self.projection_CFP(featureCFP)
+        featureCFP_projected_reshaped = featureCFP_projected.contiguous().view(
+            f_b, f_h, f_w, 128).transpose(1, 3)
+
+        # Cosine similarity between projected CFP features and projected FFA prototypes
+        activation_common_before, _ = self.cos_activation_projection(
+            featureCFP_projected_reshaped, proto_ffa_projected)
+
+        # Global max-pooling per prototype
+        activation_common = activation_common_before.view(
+            activation_common_before.shape[0], activation_common_before.shape[1], -1)
+        topk_activations, _ = torch.topk(activation_common, 1, dim=-1)
+        mean_activations_common = torch.mean(topk_activations, dim=-1)
+
+        return mean_activations_common, activation_common_before, activation_common
+
+    def forward(self, x1, x2=None, is_train=True, prototypes_of_wrong_class=None, incomplete=False):
+        """Forward pass supporting both training (paired CFP+FFA) and inference (CFP-only).
+        
+        Args:
+            x1: CFP input image tensor, always required
+            x2: FFA input (list of frame tensors). Required during training,
+                ignored when incomplete=True (inference mode)
             is_train: training mode flag
-            incpmplete: if True, use cross-modal feature completion (inference mode)
+            incomplete: if True, run in angiography-free inference mode —
+                only CFP is used, missing FFA features are completed via
+                cross-modal prototype indexing (paper Section "Inference process")
         
         Returns:
             logits: [logits_CFP, logits_FFA, logits_fused]
+                - In incomplete mode, logits_FFA is the completed FFA logits
+                  (derived from cross-modal indexing, not from actual FFA images)
             features: [max_act_CFP, max_act_FFA, act_common, act_FFA, proj_CFP, proj_FFA]
+                - In incomplete mode, max_act_FFA and act_FFA are None
         """
-        # Forward through individual branches
-        logits_CFP, [max_activations_CFP, _, conv_features_CFP, activation_CFP] = self.CFP_branch(x1, is_train)
-        logits_FFA, [max_activations_FFA, _, conv_features_FFA, activation_FFA] = self.FFA_branch(x2, is_train)
+        # ---- CFP branch: always runs ----
+        logits_CFP, [max_activations_CFP, _, conv_features_CFP, activation_CFP] = \
+            self.CFP_branch(x1, is_train)
 
-        # Project prototype vectors into shared latent space for cross-modal alignment
+        # ---- Project prototype vectors into shared latent space ----
         b, dim, h, w = self.CFP_branch.prototype_vectors.shape
         proto_cfp = self.CFP_branch.prototype_vectors.transpose(1, 3).contiguous().reshape(b * w * h, dim)
         proto_ffa = self.FFA_branch.prototype_vectors.transpose(1, 3).contiguous().reshape(b * w * h, dim)
@@ -461,39 +507,58 @@ class MultiModel(nn.Module):
         projected_CFP = projected_CFP.reshape(num_class, per_num, dim_new)
         projected_FFA = projected_FFA.reshape(num_class, per_num, dim_new)
 
-        # Cross-modal feature completion: use CFP features to index FFA prototype library
-        n = int(activation_CFP.shape[-1] ** 0.5)
-        activation_CFP_reshape = activation_CFP.view(activation_CFP.shape[0], activation_CFP.shape[1], n, n)
+        # ---- Cross-modal feature completion (always computed) ----
+        mean_activations_common, activation_common_before, activation_common = \
+            self._compute_cross_modal_completion(conv_features_CFP, projected_FFA)
 
+        # ---- CFP gating ----
+        n = int(activation_CFP.shape[-1] ** 0.5)
+        activation_CFP_reshape = activation_CFP.view(
+            activation_CFP.shape[0], activation_CFP.shape[1], n, n)
         gate_cfp = self.gate_CFP(activation_CFP_reshape)
 
-        # Project FFA prototypes and CFP dense features into shared space
-        proto_ffa_projected = projected_FFA.contiguous().view(b, h, w, 128).transpose(1, 3)
-        f_b, f_d, f_h, f_w = conv_features_CFP.shape
-        featureCFP = conv_features_CFP.transpose(1, 3).contiguous().reshape(f_b * f_w * f_h, f_d)
-        featureCFP_projected = self.projection_CFP(featureCFP)
-        featureCFP_projected_reshaped = featureCFP_projected.contiguous().view(f_b, f_h, f_w, 128).transpose(1, 3)
-
-        # Compute cross-modal activation: CFP features matched against FFA prototypes
-        activation_common_before, _ = self.cos_activation_projection(
-            featureCFP_projected_reshaped, proto_ffa_projected)
-        activation_common = activation_common_before.view(
-            activation_common_before.shape[0], activation_common_before.shape[1], -1)
-        topk_activations, _ = torch.topk(activation_common, 1, dim=-1)
-        mean_activations_common = torch.mean(topk_activations, dim=-1)
-
+        # ---- FFA gating (from completed activations) ----
         gate_ffa = self.gate_FFA(activation_common_before).squeeze()
 
-        # Fuse CFP activations and completed FFA activations via gating
-        fusion_activation = max_activations_CFP * gate_cfp.squeeze() + mean_activations_common * gate_ffa.squeeze()
-        logits_mean = self.last_layer_multi(fusion_activation)
+        if incomplete:
+            # ============================================================
+            # Inference mode: FFA is UNAVAILABLE, use completed features only
+            # ============================================================
+            # Fuse CFP activations with cross-modal completed FFA activations
+            fusion_activation = (max_activations_CFP * gate_cfp.squeeze()
+                                 + mean_activations_common * gate_ffa.squeeze())
+            logits_fused = self.last_layer_multi(fusion_activation)
 
-        return (
-            [logits_CFP, logits_FFA, logits_mean],
-            [max_activations_CFP, max_activations_FFA,
-             activation_common, activation_FFA,
-             projected_CFP, projected_FFA]
-        )
+            # Also produce a "completed FFA" logit via the FFA classifier
+            logits_FFA_completed = self.FFA_branch.last_layer(mean_activations_common)
+
+            return (
+                [logits_CFP, logits_FFA_completed, logits_fused],
+                [max_activations_CFP, None,
+                 activation_common, None,
+                 projected_CFP, projected_FFA]
+            )
+        else:
+            # ============================================================
+            # Training mode: both CFP and FFA are available
+            # ============================================================
+            assert x2 is not None, "FFA input (x2) is required during training"
+
+            logits_FFA, [max_activations_FFA, _, conv_features_FFA, activation_FFA] = \
+                self.FFA_branch(x2, is_train)
+
+            # Fuse CFP activations with completed FFA activations
+            # (during training, the completed path is supervised to align with direct FFA)
+            fusion_activation = (max_activations_CFP * gate_cfp.squeeze()
+                                 + mean_activations_common * gate_ffa.squeeze())
+            logits_fused = self.last_layer_multi(fusion_activation)
+
+            return (
+                [logits_CFP, logits_FFA, logits_fused],
+                [max_activations_CFP, max_activations_FFA,
+                 activation_common, activation_FFA,
+                 projected_CFP, projected_FFA]
+            )
 
     def cos_activation_projection(self, x, proto_project, is_train=True,
                                   prototypes_of_wrong_class=None):
